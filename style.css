@@ -32,8 +32,15 @@ footer { font-size: 12px; padding: 32px 16px; }
 .notice { background: var(--mid-bg); color: var(--text); border-radius: 10px; padding: 12px 14px; margin-top: 16px; }
 .notice code { background: var(--low-bg); padding: 1px 5px; border-radius: 4px; }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin: 16px 0; }
+.row { display: flex; gap: 8px; margin: 0; }
+.row button {
+  padding: 9px 16px; border: 0; border-radius: 8px; background: var(--accent); color: #fff;
+  font: inherit; font-weight: 600; cursor: pointer;
+}
+@media (prefers-color-scheme: dark) { .row button { color: #0d1220; } }
+.notice p { margin: 4px 0; }
 .row input {
-  width: 100%; padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px;
+  flex: 1; min-width: 0; padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px;
   background: var(--bg); color: var(--text); font: inherit;
 }
 .buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }

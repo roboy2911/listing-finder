@@ -23,12 +23,13 @@
 
     <div id="status" class="status" aria-live="polite"></div>
 
-    <section id="links" class="card" hidden>
+    <section id="links" class="card">
       <h2>Search by name</h2>
-      <p class="hint">Built from the best match. Edit it if it's off, then open a search.</p>
-      <div class="row">
+      <p class="hint">Filled in from your photo. Edit it if it's off and press Search to redo the eBay search (1 SerpApi search, the photo isn't searched again), or open a site directly.</p>
+      <form id="nameForm" class="row">
         <input id="query" type="text" placeholder="e.g. Charizard Base Set 4/102 holo">
-      </div>
+        <button type="submit">Search</button>
+      </form>
       <div class="buttons">
         <a id="lnkSold" target="_blank" rel="noopener">eBay AU sold</a>
         <a id="lnkActive" target="_blank" rel="noopener">eBay AU for sale</a>
@@ -40,7 +41,7 @@
     <div id="results"></div>
   </main>
 
-  <footer>Runs on your computer. Images are sent only to eBay, and to imgbb + SerpApi (Google Lens) if those keys are set.</footer>
+  <footer>Runs on your computer. Your photo is sent only to SerpApi (Google Lens), which deletes it after 10 minutes.</footer>
   <script src="app.js"></script>
 </body>
 </html>

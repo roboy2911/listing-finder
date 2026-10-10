@@ -1,6 +1,3 @@
 {
-  "ebayClientId": "YOUR_EBAY_APP_ID",
-  "ebayClientSecret": "YOUR_EBAY_CERT_ID",
-  "serpApiKey": "YOUR_SERPAPI_KEY",
-  "imgbbApiKey": "YOUR_IMGBB_KEY"
+  "serpApiKey": "YOUR_SERPAPI_KEY"
 }

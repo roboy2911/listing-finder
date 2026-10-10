@@ -1,59 +1,53 @@
 # Listing Finder
 
-Drop in a photo of an item and find **the same item** listed on:
+Drop in a photo of an item and find **the same item** on eBay Australia and Facebook.
 
-- **eBay Australia: for sale now** (eBay's own image search API)
-- **eBay Australia: sold / ended** (Google Lens results on ebay.com.au that aren't live listings)
-- **Facebook & Facebook Marketplace** (Google Lens results on facebook.com)
+How it works:
 
-Every result's photo is compared with yours and labelled **Same photo / Very similar / Similar**,
-closest first. There are also one-click **eBay AU sold**, **eBay AU for sale** and
-**Facebook Marketplace** searches, pre-filled with the best match's name. You can edit the name.
+1. **Google Lens** (through SerpApi, set to Australia) finds pages showing the same image, including
+   eBay AU listings and Facebook / Marketplace posts.
+2. The item's name is worked out from those matches and used to search **eBay AU's current listings**
+   (SerpApi's eBay search).
+3. Every result's photo is compared with yours and labelled **Same photo / Very similar / Similar**,
+   closest first. Google's own **exact match** results are marked too.
 
-Runs on Windows with nothing to install: a small PowerShell server plus a web page.
+Results are grouped into **eBay AU: for sale now**, **eBay AU: sold or ended** (eBay pages showing
+your image that aren't live any more), **Facebook & Marketplace**, and **Other sites**.
+
+One-click buttons open **eBay AU sold**, **eBay AU for sale** and **Facebook Marketplace** searches for
+the item name in your own browser. Edit the name if it's off.
 
 ## Setup (once)
 
-1. **eBay API keys** (free):
-   - Sign up at <https://developer.ebay.com/>, then go to *Application Keys* and create a **Production** keyset.
-   - Copy the **App ID (Client ID)** and **Cert ID (Client Secret)**.
-2. **Google Lens keys** (needed for sold listings and Facebook):
-   - **SerpApi** (<https://serpapi.com/>): the free plan includes 250 searches/month. Copy your API key.
-     Each photo you search uses 2 SerpApi searches.
-   - **imgbb** (<https://api.imgbb.com/>): free. Google Lens needs a public image link, so your
-     photo is uploaded to imgbb and **automatically deleted after 10 minutes**.
-3. Copy `config.example.json` to `config.json` and paste in your keys.
-   `config.json` is git-ignored, so your keys are never committed.
-
-You can skip either set of keys. The app will search with whatever is configured.
+1. **Install Python** from <https://www.python.org/downloads/> and tick **"Add python.exe to PATH"**.
+2. **Get a SerpApi key** (free, no credit card): sign up at <https://serpapi.com/> and copy your API key.
+   The free plan includes 250 searches/month. Each photo uses 3 (about 80 photos/month), and
+   re-searching eBay by name uses 1.
+3. Double-click **`install.bat`**. It installs the two Python packages and creates `config.json`.
+4. Open `config.json` and paste in your key: `"serpApiKey": "abc123..."`.
+   `config.json` is git-ignored, so your key is never committed.
 
 ## Run
 
-Double-click **`start.bat`**, or run:
+Double-click **`start.bat`** (or run `python server.py`), then use <http://localhost:8765>.
+Choose an image, drag one in, or paste one with Ctrl+V.
 
-```
-powershell -ExecutionPolicy Bypass -File serve.ps1
-```
+## Limits
 
-Then open <http://localhost:8765>. Choose an image, drag one in, or paste one with Ctrl+V.
-
-## Limitations
-
-- **eBay sold listings:** eBay has no public API for sold items, and it blocks automated
-  requests to its sold-search page. Sold results come from pages Google has indexed. The
-  **eBay AU sold** button opens eBay's real sold search for the item name.
-- **Facebook Marketplace:** Marketplace needs a login and has no public API, so only
-  listings Google has indexed appear (often few). The **Facebook Marketplace** button opens a
-  Marketplace search in your browser, where you're already logged in.
-- The photo match score is a quick visual fingerprint. It's very good at "same photo,
-  resized" but weaker for different photos of the same item. Use Google's
-  "exact match" badge and your eye for those.
+- **eBay sold:** eBay has no public API for sold items, and its sold search needs a login and blocks
+  automated browsers. So the app only shows sold/ended eBay pages that Google Lens finds. The
+  **eBay AU sold** button opens the full sold search in your browser.
+- **Facebook Marketplace:** it needs a login and has no public API, so only posts Google has indexed
+  appear. The **Facebook Marketplace** button opens a live search in your browser.
+- The photo match score is a quick visual fingerprint. It's very good at "same photo, resized"
+  but weaker for different photos of the same item.
+- Privacy: your photo is uploaded to SerpApi, which deletes it after 10 minutes.
 
 ## Files
 
 | File | What it does |
 | --- | --- |
-| `serve.ps1` | Local server: serves the page and calls eBay / imgbb / SerpApi with your keys |
-| `index.html`, `style.css`, `app.js` | The web page: upload, sort results, compare photos |
-| `config.example.json` | Template for `config.json` (your keys) |
-| `start.bat` | Starts the server and opens the page |
+| `server.py` | Local web server: Google Lens and eBay searches through SerpApi, image proxy |
+| `index.html`, `style.css`, `app.js` | The web page: upload, group results, compare photos |
+| `install.bat` / `start.bat` | One-time install / start the app |
+| `config.example.json` | Template for `config.json` (your SerpApi key) |

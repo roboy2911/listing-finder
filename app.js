@@ -1,42 +1,46 @@
-// Listing Finder: sends the image to eBay's image search and Google Lens (through serve.ps1),
-// sorts what comes back into eBay AU for sale / eBay AU sold / Facebook, and ranks each
-// result by how closely its photo matches yours.
+// Listing Finder: finds your photo with Google Lens (eBay AU pages, Facebook), then searches
+// eBay AU's current listings by the item's name, ranking each result by how closely its
+// photo matches yours. All network calls go through server.py.
 
 const $ = (id) => document.getElementById(id);
 const fileInput = $('file'), drop = $('drop'), preview = $('preview'), statusEl = $('status');
 const resultsEl = $('results'), queryEl = $('query');
 
 let runId = 0;
+let mine = null;          // fingerprint of the current photo
+let lensGroups = null;    // Lens results for the current photo, reused by "Search again"
+let setup = { serpapi: false };
 
 // ---------- input ----------
-fileInput.addEventListener('change', () => fileInput.files[0] && run(fileInput.files[0]));
+fileInput.addEventListener('change', () => fileInput.files[0] && runImage(fileInput.files[0]));
 drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });
 drop.addEventListener('dragleave', () => drop.classList.remove('over'));
 drop.addEventListener('drop', (e) => {
   e.preventDefault(); drop.classList.remove('over');
   const f = [...e.dataTransfer.files].find((f) => f.type.startsWith('image/'));
-  if (f) run(f);
+  if (f) runImage(f);
 });
 drop.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') fileInput.click(); });
 document.addEventListener('paste', (e) => {
+  if (e.target === queryEl) return;
   const item = [...e.clipboardData.items].find((i) => i.type.startsWith('image/'));
-  if (item) run(item.getAsFile());
+  if (item) runImage(item.getAsFile());
 });
 queryEl.addEventListener('input', updateLinks);
+$('nameForm').addEventListener('submit', (e) => { e.preventDefault(); runName(); });
 
 // ---------- setup check ----------
 fetch('api/status').then((r) => r.json()).then((s) => {
-  const missing = [];
-  if (!s.ebay) missing.push('eBay (<code>ebayClientId</code> / <code>ebayClientSecret</code>): finds current eBay AU listings');
-  if (!s.lens) missing.push('Google Lens (<code>serpApiKey</code> + <code>imgbbApiKey</code>): finds sold eBay listings and Facebook posts');
-  if (missing.length) {
-    $('setup').innerHTML = `<strong>Some searches are off.</strong> Add keys to <code>config.json</code> (see README), then restart serve.ps1:<ul>${missing.map((m) => `<li>${m}</li>`).join('')}</ul>`;
+  setup = s;
+  if (!s.serpapi) {
+    $('setup').innerHTML = '<p><strong>No SerpApi key:</strong> searching is off. Add <code>serpApiKey</code> to <code>config.json</code> and restart (see README). The site buttons below still work.</p>';
     $('setup').hidden = false;
   }
 }).catch(() => {
-  $('setup').innerHTML = '<strong>Server not running.</strong> Start it with <code>powershell -ExecutionPolicy Bypass -File serve.ps1</code> and open <code>http://localhost:8765</code>.';
+  $('setup').innerHTML = '<p><strong>Server not running.</strong> Start it with <code>python server.py</code> and open <code>http://localhost:8765</code>.</p>';
   $('setup').hidden = false;
 });
+updateLinks();
 
 // ---------- image helpers ----------
 function loadImage(src) {
@@ -48,14 +52,18 @@ function loadImage(src) {
   });
 }
 
-// Shrink to at most 1000px and return base64 JPEG (no data: prefix)
+// JPEG base64 (no data: prefix) under SerpApi's 500 KB upload limit
 function toJpegBase64(img) {
-  const scale = Math.min(1, 1000 / Math.max(img.naturalWidth, img.naturalHeight));
-  const c = document.createElement('canvas');
-  c.width = Math.round(img.naturalWidth * scale);
-  c.height = Math.round(img.naturalHeight * scale);
-  c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-  return c.toDataURL('image/jpeg', 0.9).split(',')[1];
+  for (const [size, quality] of [[1000, 0.88], [800, 0.85], [640, 0.8], [480, 0.75]]) {
+    const scale = Math.min(1, size / Math.max(img.naturalWidth, img.naturalHeight));
+    const c = document.createElement('canvas');
+    c.width = Math.round(img.naturalWidth * scale);
+    c.height = Math.round(img.naturalHeight * scale);
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    const b64 = c.toDataURL('image/jpeg', quality).split(',')[1];
+    if (b64.length * 0.75 < 480 * 1024) return b64;
+  }
+  throw new Error('Image too large');
 }
 
 // Fingerprint = difference hash (brightness gradients on a 9x8 grid, 64 bits)
@@ -86,100 +94,154 @@ function similarity(a, b) {
   return Math.round(100 * Math.max(0, Math.min(1, 0.7 * shape + 0.3 * colour)));
 }
 
-// ---------- search ----------
-async function post(url, image) {
-  const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image }) });
-  const j = await r.json();
+// ---------- helpers ----------
+async function api(url, image) {
+  const opts = image ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image }) } : {};
+  const r = await fetch(url, opts);
+  const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error || r.statusText);
   return j;
 }
+const getItems = (path, q) => api(`api/${path}?q=${encodeURIComponent(q)}`).then((j) => j.items);
 
 function hostOf(url) { try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return ''; } }
 function ebayId(url) { const m = /\/itm\/(?:[^/?]+\/)?(\d{9,15})/.exec(url || ''); return m && m[1]; }
-function money(p) {
-  if (!p) return '';
-  if (p.value && p.currency) return `${p.currency === 'AUD' ? 'AU $' : p.currency + ' '}${Number(p.value).toFixed(2)}`;
-  return p.value || '';
+
+function words(title) {
+  return (title || '')
+    .replace(/(\.\.\.|…)\s*$/, '')
+    .replace(/\b(free (post|postage|shipping)|fast post|aus seller|au stock|brand new|bnib|look|wow|rare|for sale)\b/gi, ' ')
+    .replace(/[^\p{L}\p{N}/#\- ]+/gu, ' ').split(/\s+/)
+    .filter((w) => w && w !== '-' && !/^(the|a|an|and|of|for|with|in|on|to|my|your|is)$/i.test(w));
 }
 
-async function run(file) {
+// Item name for the searches: the words most match titles agree on, in the order they
+// appear in the best titles. Falls back to the best title itself.
+function guessName(titles) {
+  titles = titles.filter(Boolean).slice(0, 15);
+  if (!titles.length) return '';
+  const df = new Map();
+  for (const t of titles) for (const w of new Set(words(t).map((w) => w.toLowerCase()))) df.set(w, (df.get(w) || 0) + 1);
+  const need = Math.max(2, Math.ceil(titles.length * 0.3));
+  const seen = new Set(), picked = [];
+  for (const t of titles) for (const w of words(t)) {
+    const k = w.toLowerCase();
+    if (df.get(k) >= need && !seen.has(k)) { seen.add(k); picked.push(w); }
+  }
+  return (picked.length >= 2 ? picked : words(titles[0])).slice(0, 8).join(' ');
+}
+
+function updateLinks() {
+  const q = encodeURIComponent(queryEl.value.trim());
+  $('lnkSold').href = `https://www.ebay.com.au/sch/i.html?_nkw=${q}&LH_Sold=1&LH_Complete=1`;
+  $('lnkActive').href = `https://www.ebay.com.au/sch/i.html?_nkw=${q}`;
+  $('lnkMarket').href = `https://www.facebook.com/marketplace/search/?query=${q}`;
+}
+
+// ---------- photo search ----------
+async function runImage(file) {
   const id = ++runId;
   resultsEl.innerHTML = '';
   const src = URL.createObjectURL(file);
   preview.src = src; preview.hidden = false;
-  $('dropText').innerHTML = '<strong>Searching this image.</strong> Drop or paste another to start over.';
-  statusEl.textContent = 'Searching eBay and Google Lens…';
+  $('dropText').innerHTML = '<strong>Searching this photo.</strong> Drop or paste another to start over.';
 
   const img = await loadImage(src);
-  const b64 = toJpegBase64(img);
-  const mine = fingerprint(img);
+  mine = fingerprint(img);
+  lensGroups = { ebay: [], facebook: [], other: [], error: '' };
 
-  const [ebay, lens] = await Promise.allSettled([post('api/ebay', b64), post('api/lens', b64)]);
-  if (id !== runId) return;
-
-  const groups = {
-    active: { title: 'eBay AU: for sale now', items: [], error: ebay.status === 'rejected' ? ebay.reason.message : '' },
-    sold: { title: 'eBay AU: sold or ended', note: 'eBay AU pages Google found that aren\'t in the current listings, so most have sold or ended. Open to check.', items: [], error: lens.status === 'rejected' ? lens.reason.message : '' },
-    facebook: { title: 'Facebook & Marketplace', items: [], error: lens.status === 'rejected' ? lens.reason.message : '' },
-    other: { title: 'Other sites', items: [], collapsed: true },
-  };
-
-  const activeIds = new Set();
-  if (ebay.status === 'fulfilled') {
-    for (const it of ebay.value.itemSummaries || []) {
-      const id = ebayId(it.itemWebUrl) || it.legacyItemId;
-      if (id) activeIds.add(String(id));
-      groups.active.items.push({
-        title: it.title, url: it.itemWebUrl, price: money(it.price),
-        thumb: it.image?.imageUrl || it.thumbnailImages?.[0]?.imageUrl,
-        meta: [it.condition, it.itemLocation?.city || it.itemLocation?.country].filter(Boolean).join(' · '),
-      });
+  if (setup.serpapi) {
+    statusEl.textContent = 'Identifying the photo with Google Lens…';
+    try {
+      const lens = await api('api/lens', toJpegBase64(img));
+      if (id !== runId) return;
+      sortLens(lens);
+    } catch (e) {
+      lensGroups.error = e.message;
     }
+  } else {
+    lensGroups.error = 'SerpApi key not set';
   }
 
-  if (lens.status === 'fulfilled') {
-    const seen = new Set();
-    const exact = new Set((lens.value.exact_matches || []).map((m) => m.link));
-    const all = [...(lens.value.exact_matches || []), ...(lens.value.visual_matches || [])];
-    for (const m of all) {
-      if (!m.link || seen.has(m.link)) continue;
-      seen.add(m.link);
-      const host = hostOf(m.link);
-      const item = {
-        title: m.title, url: m.link, price: m.price?.value || '', thumb: m.thumbnail || m.image,
-        meta: m.source || host, exact: exact.has(m.link),
-      };
-      if (host.endsWith('ebay.com.au')) {
-        const eid = ebayId(m.link);
-        if (eid && activeIds.has(eid)) continue; // already shown under "for sale"
-        groups.sold.items.push(item);
-      } else if (host.endsWith('facebook.com') || host === 'fb.com') {
-        if (m.link.includes('/marketplace/')) item.meta = 'Marketplace';
-        groups.facebook.items.push(item);
-      } else {
-        groups.other.items.push(item);
-      }
-    }
-  }
-
-  // Name suggestion for the manual search links
-  const best = groups.active.items[0]?.title || groups.sold.items[0]?.title || groups.other.items[0]?.title || '';
-  queryEl.value = cleanQuery(best);
-  $('links').hidden = false;
+  // Name for the by-name searches: prefer eBay titles, which describe the item well
+  const all = [...lensGroups.ebay, ...lensGroups.other, ...lensGroups.facebook];
+  queryEl.value = guessName([...all.filter((m) => m.exact), ...all.filter((m) => !m.exact)].map((m) => m.title));
   updateLinks();
-
-  const total = Object.values(groups).reduce((n, g) => n + g.items.length, 0);
-  statusEl.textContent = total ? `Found ${total} results. Comparing photos…` : 'No matches found. Try the name search below, or a clearer/cropped photo.';
-  render(groups);
-
-  await scoreAll(groups, mine, id);
-  if (id !== runId) return;
-  render(groups);
-  statusEl.textContent = total ? `Found ${total} results, closest photos first.` : statusEl.textContent;
+  if (!queryEl.value) {
+    statusEl.textContent = lensGroups.error
+      ? `Photo search unavailable (${lensGroups.error}). Type the item's name above and press Search.`
+      : 'Google Lens didn\'t recognise this photo. Type the item\'s name above and press Search.';
+    render(buildGroups({}));
+    queryEl.focus();
+    return;
+  }
+  await runName(id);
 }
 
-async function scoreAll(groups, mine, id) {
-  const items = Object.values(groups).flatMap((g) => g.items).filter((it) => it.thumb);
+function sortLens(lens) {
+  const seen = new Set();
+  const exact = new Set((lens.exact_matches || []).map((m) => m.link));
+  for (const m of [...(lens.exact_matches || []), ...(lens.visual_matches || [])]) {
+    if (!m.link || seen.has(m.link)) continue;
+    seen.add(m.link);
+    const host = hostOf(m.link);
+    const item = {
+      title: m.title, url: m.link, price: m.price?.value || '', thumb: m.thumbnail || m.image,
+      meta: m.source || host, exact: exact.has(m.link), via: 'Google Lens',
+    };
+    if (host.endsWith('ebay.com.au')) lensGroups.ebay.push(item);
+    else if (host.endsWith('facebook.com') || host === 'fb.com') {
+      if (m.link.includes('/marketplace/')) item.meta = 'Marketplace';
+      lensGroups.facebook.push(item);
+    } else lensGroups.other.push(item);
+  }
+}
+
+// ---------- name search (also used by "Search") ----------
+async function runName(id = ++runId) {
+  const q = queryEl.value.trim();
+  if (!q) { queryEl.focus(); return; }
+  statusEl.textContent = `Searching eBay AU for "${q}"…`;
+
+  const [active] = await Promise.allSettled([
+    setup.serpapi ? getItems('ebay', q) : Promise.reject(new Error('SerpApi key not set')),
+  ]);
+  if (id !== runId) return;
+
+  const groups = buildGroups(active);
+  const total = Object.values(groups).reduce((n, g) => n + g.items.length, 0);
+  render(groups);
+  if (mine && total) {
+    statusEl.textContent = `Found ${total} results. Comparing photos…`;
+    await scoreAll(groups, id);
+    if (id !== runId) return;
+    render(groups);
+    statusEl.textContent = `Found ${total} results, closest photos first.`;
+  } else {
+    statusEl.textContent = total ? `Found ${total} results.` : 'Nothing found. Try a shorter or different name.';
+  }
+}
+
+function buildGroups(active) {
+  const lg = lensGroups || { ebay: [], facebook: [], other: [], error: '' };
+  const activeItems = active?.status === 'fulfilled' ? active.value : [];
+  const activeIds = new Set(activeItems.map((it) => ebayId(it.url)).filter(Boolean));
+  // eBay pages showing your photo that aren't current listings have mostly sold or ended
+  const lensEbay = lg.ebay.filter((it) => !activeIds.has(ebayId(it.url)));
+  const exactIds = new Set(lg.ebay.filter((it) => it.exact).map((it) => ebayId(it.url)));
+  for (const it of activeItems) if (exactIds.has(ebayId(it.url))) it.exact = true;
+  const fb = [...lg.facebook].sort((a, b) => (b.meta === 'Marketplace') - (a.meta === 'Marketplace'));
+
+  return {
+    active: { title: 'eBay AU: for sale now', items: activeItems, error: active?.status === 'rejected' ? active.reason.message : '' },
+    sold: { title: 'eBay AU: sold or ended', note: 'eBay AU pages showing this image that aren\'t current listings, so most have sold or ended. For full sold history use the "eBay AU sold" button above.', items: lensEbay, error: lg.error },
+    facebook: { title: 'Facebook & Marketplace', note: 'Pages Google has found. Marketplace needs a login, so use the "Facebook Marketplace" button above for live listings.', items: fb, error: lg.error },
+    other: { title: 'Other sites', items: lg.other, collapsed: true, hideEmpty: true },
+  };
+}
+
+async function scoreAll(groups, id) {
+  const items = Object.values(groups).flatMap((g) => g.items).filter((it) => it.thumb && it.score == null);
   let next = 0;
   const worker = async () => {
     while (next < items.length && id === runId) {
@@ -192,19 +254,8 @@ async function scoreAll(groups, mine, id) {
   };
   await Promise.all(Array.from({ length: 6 }, worker));
   for (const g of Object.values(groups)) {
-    g.items.sort((a, b) => (b.exact - a.exact) || ((b.score ?? -1) - (a.score ?? -1)));
+    g.items.sort((a, b) => (!!b.exact - !!a.exact) || ((b.score ?? -1) - (a.score ?? -1)));
   }
-}
-
-function cleanQuery(title) {
-  return title.replace(/[^\p{L}\p{N}/#.\- ]+/gu, ' ').replace(/\s+/g, ' ').trim().split(' ').slice(0, 9).join(' ');
-}
-
-function updateLinks() {
-  const q = encodeURIComponent(queryEl.value.trim());
-  $('lnkSold').href = `https://www.ebay.com.au/sch/i.html?_nkw=${q}&LH_Sold=1&LH_Complete=1`;
-  $('lnkActive').href = `https://www.ebay.com.au/sch/i.html?_nkw=${q}`;
-  $('lnkMarket').href = `https://www.facebook.com/marketplace/search/?query=${q}`;
 }
 
 // ---------- render ----------
@@ -214,8 +265,8 @@ function badges(it) {
   const b = [];
   if (it.exact) b.push('<span class="badge same">Google: exact match</span>');
   if (it.score != null) {
-    if (it.score >= 88) b.push(`<span class="badge same">Same photo ${it.score}%</span>`);
-    else if (it.score >= 72) b.push(`<span class="badge close">Very similar ${it.score}%</span>`);
+    if (it.score >= 80) b.push(`<span class="badge same">Same photo ${it.score}%</span>`);
+    else if (it.score >= 65) b.push(`<span class="badge close">Very similar ${it.score}%</span>`);
     else b.push(`<span class="badge">Similar ${it.score}%</span>`);
   }
   return b.join('');
@@ -223,7 +274,7 @@ function badges(it) {
 
 function render(groups) {
   resultsEl.innerHTML = Object.values(groups).map((g) => {
-    if (g === groups.other && !g.items.length) return '';
+    if (g.hideEmpty && !g.items.length) return '';
     const body = g.items.length
       ? `<div class="grid">${g.items.map((it) => `
           <a class="item" href="${esc(it.url)}" target="_blank" rel="noopener">
