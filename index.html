@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Listing Finder</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>Listing Finder</h1>
+    <p class="sub">Drop in a photo and find the same item on eBay Australia (for sale and sold) and Facebook Marketplace.</p>
+  </header>
+
+  <main>
+    <section id="setup" class="notice" hidden></section>
+
+    <label id="drop" class="drop" tabindex="0">
+      <input id="file" type="file" accept="image/*" hidden>
+      <img id="preview" alt="" hidden>
+      <span id="dropText"><strong>Choose an image</strong>, drag it here, or paste it (Ctrl+V)</span>
+    </label>
+
+    <div id="status" class="status" aria-live="polite"></div>
+
+    <section id="links" class="card" hidden>
+      <h2>Search by name</h2>
+      <p class="hint">Built from the best match. Edit it if it's off, then open a search.</p>
+      <div class="row">
+        <input id="query" type="text" placeholder="e.g. Charizard Base Set 4/102 holo">
+      </div>
+      <div class="buttons">
+        <a id="lnkSold" target="_blank" rel="noopener">eBay AU sold</a>
+        <a id="lnkActive" target="_blank" rel="noopener">eBay AU for sale</a>
+        <a id="lnkMarket" target="_blank" rel="noopener">Facebook Marketplace</a>
+        <a href="https://lens.google.com/" target="_blank" rel="noopener">Google Lens</a>
+      </div>
+    </section>
+
+    <div id="results"></div>
+  </main>
+
+  <footer>Runs on your computer. Images are sent only to eBay, and to imgbb + SerpApi (Google Lens) if those keys are set.</footer>
+  <script src="app.js"></script>
+</body>
+</html>
