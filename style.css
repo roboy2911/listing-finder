@@ -29,6 +29,8 @@ footer { font-size: 12px; padding: 32px 16px; }
 .drop img { max-height: 200px; max-width: 45%; border-radius: 8px; }
 
 .status { min-height: 22px; color: var(--muted); }
+.status-row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; }
+.toggle { display: flex; align-items: center; gap: 6px; font-size: 14px; cursor: pointer; }
 .notice { background: var(--mid-bg); color: var(--text); border-radius: 10px; padding: 12px 14px; margin-top: 16px; }
 .notice code { background: var(--low-bg); padding: 1px 5px; border-radius: 4px; }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin: 16px 0; }

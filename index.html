@@ -9,7 +9,7 @@
 <body>
   <header>
     <h1>Listing Finder</h1>
-    <p class="sub">Drop in a photo and find the same item on eBay Australia (for sale and sold) and Facebook Marketplace.</p>
+    <p class="sub">Drop in a photo someone has posted and find the listings that use that exact photo on eBay Australia and Facebook.</p>
   </header>
 
   <main>
@@ -21,7 +21,10 @@
       <span id="dropText"><strong>Choose an image</strong>, drag it here, or paste it (Ctrl+V)</span>
     </label>
 
-    <div id="status" class="status" aria-live="polite"></div>
+    <div class="status-row">
+      <div id="status" class="status" aria-live="polite"></div>
+      <label class="toggle"><input id="showSimilar" type="checkbox"> Show similar items too</label>
+    </div>
 
     <section id="links" class="card">
       <h2>Search by name</h2>

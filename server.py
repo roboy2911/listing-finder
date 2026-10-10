@@ -96,7 +96,7 @@ def ebay():
     if not q:
         return jsonify(items=[])
     # LH_PrefLoc=1: only items located in Australia, not overseas sellers on ebay.com.au
-    data = serpapi({"engine": "ebay", "ebay_domain": "ebay.com.au", "_nkw": q, "_ipg": 50, "LH_PrefLoc": "1"})
+    data = serpapi({"engine": "ebay", "ebay_domain": "ebay.com.au", "_nkw": q, "_ipg": 200, "LH_PrefLoc": "1"})
     items = []
     for r in data.get("organic_results", []):
         p = r.get("price") or {}

@@ -8,6 +8,7 @@ const resultsEl = $('results'), queryEl = $('query');
 
 let runId = 0;
 let mine = null;          // fingerprint of the current photo
+let mineCrops = null;     // fingerprints of the photo and centred crops of it
 let lensGroups = null;    // Lens results for the current photo, reused by "Search again"
 let setup = { serpapi: false };
 let lastGroups = null;    // results currently shown, re-rendered when the postcode changes
@@ -129,18 +130,19 @@ function toJpegBase64(img) {
 
 // Fingerprint = difference hash (brightness gradients on a 9x8 grid, 64 bits)
 // plus average colour on a 4x4 grid. Robust to resizing and recompression.
-function fingerprint(img) {
+// crop = [x, y, w, h] as fractions of the image (default: the whole image).
+function fingerprint(img, crop = [0, 0, 1, 1]) {
   const c = document.createElement('canvas');
   const ctx = c.getContext('2d', { willReadFrequently: true });
-  const draw = (w, h) => { c.width = w; c.height = h; ctx.imageSmoothingQuality = 'high'; ctx.drawImage(img, 0, 0, w, h); };
-  c.width = 9; c.height = 8;
-  ctx.drawImage(img, 0, 0, 9, 8);
+  const W = img.naturalWidth, H = img.naturalHeight;
+  const [sx, sy, sw, sh] = [crop[0] * W, crop[1] * H, crop[2] * W, crop[3] * H];
+  const draw = (w, h) => { c.width = w; c.height = h; ctx.imageSmoothingQuality = 'high'; ctx.drawImage(img, sx, sy, sw, sh, 0, 0, w, h); };
+  draw(9, 8);
   const d = ctx.getImageData(0, 0, 9, 8).data;
   const gray = (x, y) => { const i = (y * 9 + x) * 4; return d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114; };
   const bits = [];
   for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) bits.push(gray(x, y) > gray(x + 1, y) ? 1 : 0);
-  c.width = 4; c.height = 4;
-  ctx.drawImage(img, 0, 0, 4, 4);
+  draw(4, 4);
   const colour = [...ctx.getImageData(0, 0, 4, 4).data].filter((_, i) => i % 4 !== 3);
 
   // Detail for the strict "identical photo" check: 24x24 brightness (normalised so overall
@@ -156,9 +158,23 @@ function fingerprint(img) {
   return {
     bits, colour, colour8,
     fine: fine.map((v) => (v - mean) / sd),
-    aspect: img.naturalWidth / img.naturalHeight,
+    aspect: sw / sh,
   };
 }
+
+// The photo plus centred crops of it, so a repost that was trimmed (or squared off, as
+// Facebook and eBay thumbnails often are) still lines up with the original
+function cropVariants(img) {
+  const W = img.naturalWidth, H = img.naturalHeight;
+  const crops = [0, 0.025, 0.05, 0.075, 0.1].map((m) => [m, m, 1 - 2 * m, 1 - 2 * m]);
+  if (Math.abs(W - H) / Math.max(W, H) > 0.05) {
+    const s = Math.min(W, H);
+    crops.push([(W - s) / 2 / W, (H - s) / 2 / H, s / W, s / H]); // centred square
+  }
+  return crops.map((c) => fingerprint(img, c));
+}
+
+const identicalAny = (as, bs) => as.some((a) => bs.some((b) => identicalPhoto(a, b)));
 
 // Strict check: is this the very same photo (same background, framing and colours), just
 // resized or recompressed? Different photos of the same item fail this.
@@ -246,6 +262,7 @@ async function runImage(file) {
 
   const img = await loadImage(src);
   mine = fingerprint(img);
+  mineCrops = cropVariants(img);
   lensGroups = { ebay: [], facebook: [], other: [], overseas: [], error: '' };
 
   if (setup.serpapi) {
@@ -309,12 +326,23 @@ function sortLens(lens) {
       title: m.title, url: m.link, price: m.price?.value || '', thumb: m.thumbnail || m.image,
       meta: m.source || host, exact: exact.has(m.link), via: 'Google Lens',
     };
+    const eid = /(^|\.)ebay\.[a-z.]+$/.test(host) && ebayId(m.link);
     if (host.endsWith('ebay.com.au')) lensGroups.ebay.push(item);
-    else if (host.endsWith('facebook.com') || host === 'fb.com') {
+    else if (eid) {
+      // Listing found on another eBay site: every eBay item has the same number worldwide,
+      // so link to it on ebay.com.au. Only shown if it's your exact photo (seller may be overseas).
+      item.url = `https://www.ebay.com.au/itm/${eid}`;
+      item.meta = `found on ${host}`;
+      item.offsite = true;
+      lensGroups.ebay.push(item);
+    } else if (host.endsWith('facebook.com') || host === 'fb.com') {
       Object.assign(item, describeFacebook(m.link));
       lensGroups.facebook.push(item);
-    } else if (/\.au$/.test(host)) lensGroups.other.push(item);
-    else lensGroups.overseas.push(item); // not shown, but helps work out the item's name
+    } else {
+      // Non-Australian sites are only shown if they use your exact photo
+      if (!/\.au$/.test(host)) item.offsite = true;
+      lensGroups.other.push(item);
+    }
   }
 }
 
@@ -332,16 +360,21 @@ async function runName(id = ++runId) {
   const groups = buildGroups(active);
   const total = Object.values(groups).reduce((n, g) => n + g.items.length, 0);
   lastGroups = groups;
+  if (mine && total) statusEl.textContent = `Checking photos: 0 of ${total}…`;
   render(withExactOnTop(groups));
   if (mine && total) {
-    statusEl.textContent = `Found ${total} results. Comparing photos…`;
     await scoreAll(groups, id);
     if (id !== runId) return;
     render(withExactOnTop(groups));
-    statusEl.textContent = `Found ${total} results, closest photos first.`;
+    const exact = Object.values(groups).flatMap((g) => g.items).filter(isExact).length;
+    statusEl.textContent = `${exact} using this exact photo, ${total - exact} similar` +
+      (showSimilarEl.checked ? '.' : ' (hidden, tick "Show similar items too" to see them).');
   } else {
     statusEl.textContent = total ? `Found ${total} results.` : 'Nothing found. Try a shorter or different name.';
   }
+  // Errors are shown in the sections, which may be hidden, so repeat them here
+  const errors = [active?.status === 'rejected' && `eBay search failed: ${active.reason.message}`, lensGroups?.error && `Photo search failed: ${lensGroups.error}`].filter(Boolean);
+  if (errors.length) statusEl.textContent += ` ${errors.join('. ')}.`;
 }
 
 function buildGroups(active) {
@@ -362,10 +395,18 @@ function buildGroups(active) {
   };
 }
 
-// Results that are the identical photo (passed identicalPhoto) move to a section at the very
-// top: listings for sale first, then sold, Marketplace, other posts.
+// Results using your photo (passed the strict identical-photo check) go in the section at the
+// top: eBay for sale, sold, Marketplace, other posts. Google's own "exact match" flag isn't
+// used for this: in testing it flagged hundreds of pages showing the same card, not the same
+// photo. Everything else is "similar items", hidden unless "Show similar items" is ticked.
 const SAME_PHOTO = 80;
 const isExact = (it) => !!it.identical;
+const showSimilarEl = $('showSimilar');
+try { showSimilarEl.checked = localStorage.getItem('showSimilar') === '1'; } catch {}
+showSimilarEl.addEventListener('change', () => {
+  try { localStorage.setItem('showSimilar', showSimilarEl.checked ? '1' : '0'); } catch {}
+  if (lastGroups) render(withExactOnTop(lastGroups));
+});
 
 function withExactOnTop(groups) {
   const label = { active: 'eBay AU · for sale', sold: 'eBay AU · sold/ended', facebook: 'Facebook', other: 'Other site' };
@@ -375,19 +416,31 @@ function withExactOnTop(groups) {
   for (const [key, g] of Object.entries(groups)) {
     rest[key] = { ...g, items: g.items.filter((it) => !isExact(it)) };
     for (const it of g.items.filter(isExact)) {
-      const where = key === 'facebook' && it.fb === 'marketplace' ? 'Facebook Marketplace' : label[key];
+      const where = key === 'facebook' && it.fb === 'marketplace' ? 'Facebook Marketplace' : it.offsite && key === 'sold' ? 'eBay listing' : label[key];
       const meta = it.meta && it.fb !== 'marketplace' ? `${where} · ${it.meta}` : where;
       top.push({ ...it, meta, rank: rank(key, it) });
     }
   }
   top.sort((a, b) => (a.rank - b.rank) || ((b.score ?? 0) - (a.score ?? 0)));
-  if (!top.length) return rest;
-  return { exact: { title: '★ Exact same photo found', note: 'The identical picture, background and all.', items: top, highlight: true }, ...rest };
+  // Results from non-Australian sites are only kept when they use your exact photo
+  for (const g of Object.values(rest)) g.items = g.items.filter((it) => !it.offsite);
+  const exact = {
+    title: '★ Listings using this exact photo', highlight: true, items: top,
+    note: 'The same picture, background and all (resized or slightly cropped copies count). eBay "search" pages are eBay listing pages showing the photo: open them to find the listing.',
+    empty: statusEl.textContent.startsWith('Checking')
+      ? 'Checking photos… matches will appear here as they\'re found.'
+      : 'No listings using this exact photo found. Try the original, uncropped photo, or tick "Show similar items too" to see listings of the same item.',
+  };
+  if (!showSimilarEl.checked) return { exact };
+  for (const g of Object.values(rest)) g.title = `Similar: ${g.title}`;
+  return { exact, ...rest };
 }
 
+// Checks every result's photo against yours (eBay listings first). Matches appear in the top
+// section as soon as they're found, with a progress count meanwhile.
 async function scoreAll(groups, id) {
   const items = Object.values(groups).flatMap((g) => g.items).filter((it) => it.thumb && it.score == null);
-  let next = 0;
+  let next = 0, done = 0, found = 0;
   const worker = async () => {
     while (next < items.length && id === runId) {
       const it = items[next++];
@@ -395,11 +448,17 @@ async function scoreAll(groups, id) {
         const img = await loadImage(proxied(it.thumb));
         const fp = fingerprint(img);
         it.score = similarity(mine, fp);
-        it.identical = identicalPhoto(mine, fp);
+        it.identical = identicalPhoto(mine, fp) || identicalAny(mineCrops, cropVariants(img));
       } catch { /* thumbnail unavailable: leave unscored */ }
+      done++;
+      if (id !== runId) return;
+      if (it.identical) { found++; render(withExactOnTop(groups)); }
+      if (done % 10 === 0 || it.identical) {
+        statusEl.textContent = `Checking photos: ${done} of ${items.length}` + (found ? ` (${found} exact found so far)` : '') + '…';
+      }
     }
   };
-  await Promise.all(Array.from({ length: 6 }, worker));
+  await Promise.all(Array.from({ length: 12 }, worker));
   for (const g of Object.values(groups)) {
     g.items.sort((a, b) => (!!b.identical - !!a.identical) || (!!b.exact - !!a.exact) || ((b.score ?? -1) - (a.score ?? -1)));
   }
@@ -410,7 +469,6 @@ function esc(s) { return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&am
 
 function badges(it) {
   const b = [];
-  if (it.exact) b.push('<span class="badge same">Google: exact match</span>');
   if (it.identical) b.push('<span class="badge same">Identical photo</span>');
   else if (it.score != null) {
     if (it.score >= SAME_PHOTO) b.push(`<span class="badge close">Very similar ${it.score}%</span>`);
@@ -453,7 +511,7 @@ function render(groups) {
               ${it.meta ? `<div class="meta">${esc(it.meta)}</div>` : ''}
             </div>
           </a>`).join('')}</div>`
-      : `<p class="empty">${g.error ? `<span class="err">Not searched: ${esc(g.error)}</span>` : 'Nothing found here.'}</p>`;
+      : `<p class="empty">${g.error ? `<span class="err">Not searched: ${esc(g.error)}</span>` : esc(g.empty || 'Nothing found here.')}</p>`;
     return `<details class="group${g.highlight ? ' top' : ''}" ${g.collapsed ? '' : 'open'}>
       <summary>${esc(g.title)} <span class="count">(${g.items.length})</span></summary>
       ${g.note && g.items.length ? `<p class="hint">${esc(g.note)}</p>` : ''}

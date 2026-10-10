@@ -1,25 +1,25 @@
 # Listing Finder
 
-Drop in a photo of an item and find **the same item** on eBay Australia and Facebook. Everything is
-limited to Australia: Google Lens runs as Australia, eBay results are only items located in Australia,
-and other sites are only Australian (.au) ones.
+Upload a photo someone has taken and posted somewhere, and find **the listings that use that exact photo**
+on eBay Australia and Facebook (plus any other site Google has seen it on).
 
 How it works:
 
-1. **Google Lens** (through SerpApi, set to Australia) finds pages showing the same image, including
-   eBay AU listings and Facebook / Marketplace posts.
-2. The item's name is worked out from those matches and used to search **eBay AU's current listings**
-   (SerpApi's eBay search).
-3. Every result's photo is compared with yours. Results that are the **identical photo** (same
-   background, framing and colours, just resized or recompressed) go in a highlighted
-   **Exact same photo found** box at the very top. Everything else is labelled **Very similar** or
-   **Similar**, closest first. Google's own **exact match** results are marked too.
+1. **Google Lens** (through SerpApi, set to Australia) finds pages showing images like yours, including
+   eBay listings and Facebook / Marketplace posts.
+2. The item's name is worked out from those matches and used to pull up to 200 current **eBay AU listings**
+   (items located in Australia, via SerpApi's eBay search).
+3. Every result's photo is checked against yours with a strict **identical-photo** test: same picture,
+   background and framing, allowing for resizing, recompression, slight cropping (up to ~8% per edge) and
+   square thumbnails. Matches appear at the top as soon as they're found.
+4. Everything else is hidden by default. Tick **Show similar items too** to see listings of the same item.
 
-Results are grouped into **eBay AU: for sale now**, **eBay AU: sold or ended** (eBay pages showing
-your image that aren't live any more), **Facebook & Marketplace**, and **Other Australian sites**.
+Google's own "exact match" label isn't used: in testing it flagged hundreds of pages showing the same
+card, not the same photo. eBay listings Google finds on other eBay sites (e.g. ebay.com) link to the same
+listing on ebay.com.au, and photos found on non-Australian sites are only shown when they're the exact photo.
 
-One-click buttons open **eBay AU sold**, **eBay AU for sale** and **Facebook Marketplace** searches for
-the item name in your own browser (eBay set to items in Australia, Marketplace set to the city you pick).
+One-click buttons open **eBay AU sold**, **eBay AU for sale** and **Facebook Marketplace** searches for the
+item name in your own browser (eBay set to items in Australia, Marketplace set to the city you pick).
 Edit the name if it's off.
 
 For Marketplace you can also type a **postcode**. Facebook's links can't take a postcode, so it's looked up
@@ -49,9 +49,12 @@ Choose an image, drag one in, or paste one with Ctrl+V.
 - **Facebook Marketplace:** it needs a login and has no public API, so only posts Google has indexed
   appear, and Facebook doesn't show where a post is from, so these can include overseas posts. The
   **Facebook Marketplace** button opens a live search in your chosen Australian city.
-- The identical-photo check is deliberately strict: a different photo of the same item, or a
-  noticeably cropped copy, won't count. Tested on 20 eBay photos: every resized copy matched and
-  none of the 190 pairs of different photos did.
+- The identical-photo check: tested on 25 eBay photos, resized copies, copies cropped up to 8% per edge
+  and squared-off copies all matched; 1 of 300 pairs of *different* photos also matched (the same seller
+  photographing two near-identical cards the same way). Heavier crops or screenshots with extra borders
+  may be missed, so upload the original photo where you can.
+- Only photos Google has indexed, or eBay AU listings found by the item's name, can be checked. A listing
+  under a very different name, or a Facebook post Google hasn't seen, won't be found.
 - Privacy: your photo is uploaded to SerpApi, which deletes it after 10 minutes. A postcode you enter is
   looked up with OpenStreetMap.
 
