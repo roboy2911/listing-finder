@@ -109,6 +109,10 @@ async function api(url, image) {
 }
 const getItems = (path, q) => api(`api/${path}?q=${encodeURIComponent(q)}`).then((j) => j.items);
 
+// Thumbnails load through server.py, so browser blockers or hotlink rules can't stop them.
+// eBay images are asked for at 225px (s-l225) instead of 500px to load faster.
+const proxied = (url) => 'api/img?url=' + encodeURIComponent(url.replace(/(ebayimg\.com\/.*\/s-l)\d+(\.\w+)$/, '$1225$2'));
+
 function hostOf(url) { try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return ''; } }
 function ebayId(url) { const m = /\/itm\/(?:[^/?]+\/)?(\d{9,15})/.exec(url || ''); return m && m[1]; }
 
@@ -255,7 +259,7 @@ async function scoreAll(groups, id) {
     while (next < items.length && id === runId) {
       const it = items[next++];
       try {
-        const img = await loadImage('api/img?url=' + encodeURIComponent(it.thumb));
+        const img = await loadImage(proxied(it.thumb));
         it.score = similarity(mine, fingerprint(img));
       } catch { /* thumbnail unavailable: leave unscored */ }
     }
@@ -286,7 +290,7 @@ function render(groups) {
     const body = g.items.length
       ? `<div class="grid">${g.items.map((it) => `
           <a class="item" href="${esc(it.url)}" target="_blank" rel="noopener">
-            <div class="thumb">${it.thumb ? `<img src="${esc(it.thumb)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ''}</div>
+            <div class="thumb">${it.thumb ? `<img src="${esc(proxied(it.thumb))}" alt="" loading="lazy">` : ''}</div>
             <div class="body">
               <div class="badges">${badges(it)}</div>
               <div class="title">${esc(it.title)}</div>
