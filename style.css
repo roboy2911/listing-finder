@@ -78,3 +78,7 @@ footer { font-size: 12px; padding: 32px 16px; }
 .badge.same { background: var(--good-bg); color: var(--good); }
 .badge.close { background: var(--mid-bg); color: var(--mid); }
 .empty { color: var(--muted); font-size: 14px; }
+.group.top {
+  background: var(--good-bg); border: 2px solid var(--good); border-radius: 12px; padding: 12px 14px;
+}
+.group.top > summary { color: var(--good); }

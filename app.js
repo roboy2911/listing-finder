@@ -243,12 +243,12 @@ async function runName(id = ++runId) {
 
   const groups = buildGroups(active);
   const total = Object.values(groups).reduce((n, g) => n + g.items.length, 0);
-  render(groups);
+  render(withExactOnTop(groups));
   if (mine && total) {
     statusEl.textContent = `Found ${total} results. Comparing photos…`;
     await scoreAll(groups, id);
     if (id !== runId) return;
-    render(groups);
+    render(withExactOnTop(groups));
     statusEl.textContent = `Found ${total} results, closest photos first.`;
   } else {
     statusEl.textContent = total ? `Found ${total} results.` : 'Nothing found. Try a shorter or different name.';
@@ -271,6 +271,29 @@ function buildGroups(active) {
     facebook: { title: 'Facebook & Marketplace', note: 'Pages Google has found. Marketplace needs a login, so use the "Facebook Marketplace" button above for live listings.', items: fb, error: lg.error },
     other: { title: 'Other Australian sites', items: lg.other, collapsed: true, hideEmpty: true },
   };
+}
+
+// Results showing your exact image (Google's exact match, or a "Same photo" score) move to a
+// section at the very top: listings for sale first, then sold, Marketplace, other posts.
+const SAME_PHOTO = 80;
+const isExact = (it) => it.exact || (it.score ?? 0) >= SAME_PHOTO;
+
+function withExactOnTop(groups) {
+  const label = { active: 'eBay AU · for sale', sold: 'eBay AU · sold/ended', facebook: 'Facebook', other: 'Other site' };
+  const rank = (key, it) => (key === 'facebook' ? (it.fb === 'marketplace' ? 2 : 3) : { active: 0, sold: 1, other: 4 }[key]);
+  const top = [];
+  const rest = {};
+  for (const [key, g] of Object.entries(groups)) {
+    rest[key] = { ...g, items: g.items.filter((it) => !isExact(it)) };
+    for (const it of g.items.filter(isExact)) {
+      const where = key === 'facebook' && it.fb === 'marketplace' ? 'Facebook Marketplace' : label[key];
+      const meta = it.meta && it.fb !== 'marketplace' ? `${where} · ${it.meta}` : where;
+      top.push({ ...it, meta, rank: rank(key, it) });
+    }
+  }
+  top.sort((a, b) => (a.rank - b.rank) || ((b.score ?? 0) - (a.score ?? 0)));
+  if (!top.length) return rest;
+  return { exact: { title: '★ Exact image found', items: top, highlight: true }, ...rest };
 }
 
 async function scoreAll(groups, id) {
@@ -298,7 +321,7 @@ function badges(it) {
   const b = [];
   if (it.exact) b.push('<span class="badge same">Google: exact match</span>');
   if (it.score != null) {
-    if (it.score >= 80) b.push(`<span class="badge same">Same photo ${it.score}%</span>`);
+    if (it.score >= SAME_PHOTO) b.push(`<span class="badge same">Same photo ${it.score}%</span>`);
     else if (it.score >= 65) b.push(`<span class="badge close">Very similar ${it.score}%</span>`);
     else b.push(`<span class="badge">Similar ${it.score}%</span>`);
   }
@@ -340,7 +363,7 @@ function render(groups) {
             </div>
           </a>`).join('')}</div>`
       : `<p class="empty">${g.error ? `<span class="err">Not searched: ${esc(g.error)}</span>` : 'Nothing found here.'}</p>`;
-    return `<details class="group" ${g.collapsed ? '' : 'open'}>
+    return `<details class="group${g.highlight ? ' top' : ''}" ${g.collapsed ? '' : 'open'}>
       <summary>${esc(g.title)} <span class="count">(${g.items.length})</span></summary>
       ${g.note && g.items.length ? `<p class="hint">${esc(g.note)}</p>` : ''}
       ${body}
