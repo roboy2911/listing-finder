@@ -22,6 +22,10 @@ One-click buttons open **eBay AU sold**, **eBay AU for sale** and **Facebook Mar
 the item name in your own browser (eBay set to items in Australia, Marketplace set to the city you pick).
 Edit the name if it's off.
 
+For Marketplace you can also type a **postcode**. Facebook's links can't take a postcode, so it's looked up
+(OpenStreetMap) and the nearest Marketplace city is used: capitals plus Gold Coast, Newcastle, Wollongong,
+Geelong, Townsville, Cairns, Toowoomba, Ballarat, Bendigo and Launceston. The page shows which city it picked.
+
 ## Setup (once)
 
 1. **Install Python** from <https://www.python.org/downloads/> and tick **"Add python.exe to PATH"**.
@@ -48,7 +52,8 @@ Choose an image, drag one in, or paste one with Ctrl+V.
 - The identical-photo check is deliberately strict: a different photo of the same item, or a
   noticeably cropped copy, won't count. Tested on 20 eBay photos: every resized copy matched and
   none of the 190 pairs of different photos did.
-- Privacy: your photo is uploaded to SerpApi, which deletes it after 10 minutes.
+- Privacy: your photo is uploaded to SerpApi, which deletes it after 10 minutes. A postcode you enter is
+  looked up with OpenStreetMap.
 
 ## Files
 

@@ -10,6 +10,7 @@ let runId = 0;
 let mine = null;          // fingerprint of the current photo
 let lensGroups = null;    // Lens results for the current photo, reused by "Search again"
 let setup = { serpapi: false };
+let lastGroups = null;    // results currently shown, re-rendered when the postcode changes
 
 // ---------- input ----------
 fileInput.addEventListener('change', () => fileInput.files[0] && runImage(fileInput.files[0]));
@@ -32,6 +33,61 @@ queryEl.addEventListener('input', updateLinks);
 const cityEl = $('city');
 try { cityEl.value = localStorage.getItem('city') || 'sydney'; } catch { cityEl.value = 'sydney'; }
 cityEl.addEventListener('change', () => { try { localStorage.setItem('city', cityEl.value); } catch {} updateLinks(); });
+
+// Optional postcode: Marketplace links can't take a postcode, so it's turned into the
+// nearest city Facebook has a Marketplace page for. Overrides the city list while set.
+const MARKET_CITIES = [
+  ['sydney', 'Sydney', -33.87, 151.21], ['melbourne', 'Melbourne', -37.81, 144.96],
+  ['brisbane', 'Brisbane', -27.47, 153.03], ['perth', 'Perth', -31.95, 115.86],
+  ['adelaide', 'Adelaide', -34.93, 138.6], ['canberra', 'Canberra', -35.28, 149.13],
+  ['hobart', 'Hobart', -42.88, 147.33], ['darwin', 'Darwin', -12.46, 130.84],
+  ['goldcoast', 'Gold Coast', -28.02, 153.4], ['newcastle', 'Newcastle', -32.93, 151.78],
+  ['wollongong', 'Wollongong', -34.42, 150.89], ['geelong', 'Geelong', -38.15, 144.36],
+  ['townsville', 'Townsville', -19.26, 146.82], ['cairns', 'Cairns', -16.92, 145.77],
+  ['toowoomba', 'Toowoomba', -27.56, 151.95], ['ballarat', 'Ballarat', -37.56, 143.85],
+  ['bendigo', 'Bendigo', -36.76, 144.28], ['launceston', 'Launceston', -41.43, 147.14],
+];
+const postcodeEl = $('postcode'), pcInfo = $('pcInfo');
+let pcCity = null; // [slug, name] nearest to the entered postcode
+
+function nearestCity(lat, lon) {
+  const rad = Math.PI / 180;
+  const km = ([, , la, lo]) => {
+    const a = Math.sin((la - lat) * rad / 2) ** 2 + Math.cos(lat * rad) * Math.cos(la * rad) * Math.sin((lo - lon) * rad / 2) ** 2;
+    return 12742 * Math.asin(Math.sqrt(a));
+  };
+  return MARKET_CITIES.map((c) => [c, km(c)]).sort((a, b) => a[1] - b[1])[0];
+}
+
+async function applyPostcode() {
+  const pc = postcodeEl.value.trim();
+  try { localStorage.setItem('postcode', pc); } catch {}
+  pcCity = null;
+  cityEl.disabled = false;
+  pcInfo.hidden = !pc;
+  if (pc && !/^\d{4}$/.test(pc)) { pcInfo.textContent = 'Enter a 4-digit postcode.'; updateLinks(); return; }
+  if (pc) {
+    pcInfo.textContent = `Looking up ${pc}…`;
+    try {
+      const p = await api(`api/postcode?pc=${pc}`);
+      if (postcodeEl.value.trim() !== pc) return;
+      const [[slug, name], dist] = nearestCity(p.lat, p.lon);
+      pcCity = [slug, name];
+      cityEl.disabled = true;
+      const where = [p.place, p.state].filter(Boolean).join(', ') || `postcode ${pc}`;
+      pcInfo.textContent = `${where} ${pc}: Marketplace will search around ${name}` +
+        (dist > 60 ? ` (nearest Marketplace city, ${Math.round(dist)} km away; you can narrow the area on Facebook)` : '') + '.';
+    } catch (e) {
+      pcInfo.textContent = e.message;
+    }
+  }
+  updateLinks();
+  if (lastGroups) render(withExactOnTop(lastGroups)); // refresh "Search Marketplace" links on cards
+}
+let pcTimer;
+postcodeEl.addEventListener('input', () => { clearTimeout(pcTimer); pcTimer = setTimeout(applyPostcode, 500); });
+try { postcodeEl.value = localStorage.getItem('postcode') || ''; } catch {}
+if (postcodeEl.value) applyPostcode();
 $('nameForm').addEventListener('submit', (e) => { e.preventDefault(); runName(); });
 
 // ---------- setup check ----------
@@ -238,7 +294,7 @@ function describeFacebook(url) {
 }
 
 function marketplaceUrl(text) {
-  const city = cityEl.value;
+  const city = pcCity ? pcCity[0] : cityEl.value;
   return `https://www.facebook.com/marketplace/${city ? city + '/' : ''}search/?query=${encodeURIComponent(text)}`;
 }
 
@@ -275,6 +331,7 @@ async function runName(id = ++runId) {
 
   const groups = buildGroups(active);
   const total = Object.values(groups).reduce((n, g) => n + g.items.length, 0);
+  lastGroups = groups;
   render(withExactOnTop(groups));
   if (mine && total) {
     statusEl.textContent = `Found ${total} results. Comparing photos…`;

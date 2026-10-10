@@ -6,10 +6,12 @@ Endpoints used by app.js:
     GET  /api/status
     POST /api/lens         {image: <base64 jpeg>}  Google Lens via SerpApi (country=au)
     GET  /api/ebay?q=      eBay AU current listings located in Australia, via SerpApi's eBay engine
+    GET  /api/postcode?pc= Australian postcode -> place and coordinates (OpenStreetMap)
     GET  /api/img?url=     image proxy so the page can compare thumbnails
 """
 import base64
 import json
+import re
 from pathlib import Path
 
 import requests
@@ -104,6 +106,32 @@ def ebay():
             "price": price, "meta": " · ".join(x for x in [r.get("condition"), r.get("location")] if x and "$" not in x),
         })
     return jsonify(items=items)
+
+
+_postcodes = {}
+
+
+@app.get("/api/postcode")
+def postcode():
+    """Australian postcode -> place name and coordinates, via OpenStreetMap (Nominatim)."""
+    pc = request.args.get("pc", "").strip()
+    if not re.fullmatch(r"\d{4}", pc):
+        return jsonify(error="Enter a 4-digit postcode"), 400
+    if pc not in _postcodes:
+        try:
+            r = requests.get("https://nominatim.openstreetmap.org/search", timeout=20, params={
+                "postalcode": pc, "country": "Australia", "format": "json", "addressdetails": 1, "limit": 1,
+            }, headers={"User-Agent": "ListingFinder/1.0 (personal use)"})
+            found = r.json()
+        except (requests.RequestException, ValueError):
+            raise ApiError("Postcode lookup failed, try again")
+        if not found:
+            return jsonify(error=f"Postcode {pc} not found"), 404
+        a = found[0].get("address", {})
+        place = a.get("suburb") or a.get("town") or a.get("city") or a.get("village") or a.get("municipality") or ""
+        _postcodes[pc] = {"postcode": pc, "place": place, "state": a.get("state", ""),
+                          "lat": float(found[0]["lat"]), "lon": float(found[0]["lon"])}
+    return jsonify(_postcodes[pc])
 
 
 @app.get("/api/img")
