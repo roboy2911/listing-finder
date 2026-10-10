@@ -145,8 +145,7 @@ function updateLinks() {
   // LH_PrefLoc=1: items located in Australia only
   $('lnkSold').href = `https://www.ebay.com.au/sch/i.html?_nkw=${q}&LH_Sold=1&LH_Complete=1&LH_PrefLoc=1`;
   $('lnkActive').href = `https://www.ebay.com.au/sch/i.html?_nkw=${q}&LH_PrefLoc=1`;
-  const city = cityEl.value;
-  $('lnkMarket').href = `https://www.facebook.com/marketplace/${city ? city + '/' : ''}search/?query=${q}`;
+  $('lnkMarket').href = marketplaceUrl(queryEl.value.trim());
 }
 
 // ---------- photo search ----------
@@ -189,6 +188,28 @@ async function runImage(file) {
   await runName(id);
 }
 
+// What a Facebook link says about where the image was posted. Google Lens only gives the
+// link and title, so this is read from the link: the page or group name when it's in there.
+function describeFacebook(url) {
+  let path;
+  try { path = decodeURIComponent(new URL(url).pathname); } catch { return { meta: 'Facebook post', fb: 'post' }; }
+  const seg = path.split('/').filter(Boolean);
+  const pretty = (s) => s.replace(/[-_.]+/g, ' ').trim();
+  if (seg[0] === 'marketplace' && seg[1] === 'item') return { meta: 'Marketplace listing', fb: 'marketplace' };
+  if (seg[0] === 'groups' && seg[1]) {
+    return { meta: /^\d+$/.test(seg[1]) ? 'Posted in a Facebook group' : `Posted in group: ${pretty(seg[1])}`, fb: 'group' };
+  }
+  if (seg[0] === 'people' && seg[1]) return { meta: `Posted by: ${pretty(seg[1])}`, fb: 'post' };
+  const generic = ['photo', 'photo.php', 'permalink.php', 'story.php', 'watch', 'reel', 'share', 'profile.php', 'media', 'events', 'p'];
+  if (seg[0] && !generic.includes(seg[0]) && !/^\d+$/.test(seg[0])) return { meta: `Posted by: ${pretty(seg[0])}`, fb: 'post' };
+  return { meta: 'Facebook post', fb: 'post' };
+}
+
+function marketplaceUrl(text) {
+  const city = cityEl.value;
+  return `https://www.facebook.com/marketplace/${city ? city + '/' : ''}search/?query=${encodeURIComponent(text)}`;
+}
+
 function sortLens(lens) {
   const seen = new Set();
   const exact = new Set((lens.exact_matches || []).map((m) => m.link));
@@ -202,7 +223,7 @@ function sortLens(lens) {
     };
     if (host.endsWith('ebay.com.au')) lensGroups.ebay.push(item);
     else if (host.endsWith('facebook.com') || host === 'fb.com') {
-      if (m.link.includes('/marketplace/')) item.meta = 'Marketplace';
+      Object.assign(item, describeFacebook(m.link));
       lensGroups.facebook.push(item);
     } else if (/\.au$/.test(host)) lensGroups.other.push(item);
     else lensGroups.overseas.push(item); // not shown, but helps work out the item's name
@@ -242,7 +263,7 @@ function buildGroups(active) {
   const lensEbay = lg.ebay.filter((it) => !activeIds.has(ebayId(it.url)));
   const exactIds = new Set(lg.ebay.filter((it) => it.exact).map((it) => ebayId(it.url)));
   for (const it of activeItems) if (exactIds.has(ebayId(it.url))) it.exact = true;
-  const fb = [...lg.facebook].sort((a, b) => (b.meta === 'Marketplace') - (a.meta === 'Marketplace'));
+  const fb = [...lg.facebook].sort((a, b) => (b.fb === 'marketplace') - (a.fb === 'marketplace'));
 
   return {
     active: { title: 'eBay AU: for sale now', items: activeItems, error: active?.status === 'rejected' ? active.reason.message : '' },
@@ -284,11 +305,31 @@ function badges(it) {
   return b.join('');
 }
 
+// Facebook cards have two links: the post itself (which shows who posted it) and a
+// Marketplace search for the item in the chosen city
+function facebookCard(it) {
+  const name = words(it.title).slice(0, 6).join(' ') || queryEl.value.trim();
+  const open = it.fb === 'marketplace' ? 'Open listing' : 'Open post (see who posted)';
+  return `
+    <div class="item">
+      <a class="thumb" href="${esc(it.url)}" target="_blank" rel="noopener">${it.thumb ? `<img src="${esc(proxied(it.thumb))}" alt="" loading="lazy">` : ''}</a>
+      <div class="body">
+        <div class="badges">${badges(it)}</div>
+        <div class="title">${esc(it.title)}</div>
+        <div class="meta">${esc(it.meta)}</div>
+        <div class="actions">
+          <a href="${esc(it.url)}" target="_blank" rel="noopener">${open}</a>
+          ${it.fb === 'marketplace' ? '' : `<a href="${esc(marketplaceUrl(name))}" target="_blank" rel="noopener">Search Marketplace</a>`}
+        </div>
+      </div>
+    </div>`;
+}
+
 function render(groups) {
   resultsEl.innerHTML = Object.values(groups).map((g) => {
     if (g.hideEmpty && !g.items.length) return '';
     const body = g.items.length
-      ? `<div class="grid">${g.items.map((it) => `
+      ? `<div class="grid">${g.items.map((it) => it.fb ? facebookCard(it) : `
           <a class="item" href="${esc(it.url)}" target="_blank" rel="noopener">
             <div class="thumb">${it.thumb ? `<img src="${esc(proxied(it.thumb))}" alt="" loading="lazy">` : ''}</div>
             <div class="body">
