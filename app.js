@@ -27,6 +27,11 @@ document.addEventListener('paste', (e) => {
   if (item) runImage(item.getAsFile());
 });
 queryEl.addEventListener('input', updateLinks);
+
+// Marketplace city, remembered between visits
+const cityEl = $('city');
+try { cityEl.value = localStorage.getItem('city') || 'sydney'; } catch { cityEl.value = 'sydney'; }
+cityEl.addEventListener('change', () => { try { localStorage.setItem('city', cityEl.value); } catch {} updateLinks(); });
 $('nameForm').addEventListener('submit', (e) => { e.preventDefault(); runName(); });
 
 // ---------- setup check ----------
@@ -133,9 +138,11 @@ function guessName(titles) {
 
 function updateLinks() {
   const q = encodeURIComponent(queryEl.value.trim());
-  $('lnkSold').href = `https://www.ebay.com.au/sch/i.html?_nkw=${q}&LH_Sold=1&LH_Complete=1`;
-  $('lnkActive').href = `https://www.ebay.com.au/sch/i.html?_nkw=${q}`;
-  $('lnkMarket').href = `https://www.facebook.com/marketplace/search/?query=${q}`;
+  // LH_PrefLoc=1: items located in Australia only
+  $('lnkSold').href = `https://www.ebay.com.au/sch/i.html?_nkw=${q}&LH_Sold=1&LH_Complete=1&LH_PrefLoc=1`;
+  $('lnkActive').href = `https://www.ebay.com.au/sch/i.html?_nkw=${q}&LH_PrefLoc=1`;
+  const city = cityEl.value;
+  $('lnkMarket').href = `https://www.facebook.com/marketplace/${city ? city + '/' : ''}search/?query=${q}`;
 }
 
 // ---------- photo search ----------
@@ -148,7 +155,7 @@ async function runImage(file) {
 
   const img = await loadImage(src);
   mine = fingerprint(img);
-  lensGroups = { ebay: [], facebook: [], other: [], error: '' };
+  lensGroups = { ebay: [], facebook: [], other: [], overseas: [], error: '' };
 
   if (setup.serpapi) {
     statusEl.textContent = 'Identifying the photo with Google Lens…';
@@ -164,7 +171,7 @@ async function runImage(file) {
   }
 
   // Name for the by-name searches: prefer eBay titles, which describe the item well
-  const all = [...lensGroups.ebay, ...lensGroups.other, ...lensGroups.facebook];
+  const all = [...lensGroups.ebay, ...lensGroups.other, ...lensGroups.overseas, ...lensGroups.facebook];
   queryEl.value = guessName([...all.filter((m) => m.exact), ...all.filter((m) => !m.exact)].map((m) => m.title));
   updateLinks();
   if (!queryEl.value) {
@@ -193,7 +200,8 @@ function sortLens(lens) {
     else if (host.endsWith('facebook.com') || host === 'fb.com') {
       if (m.link.includes('/marketplace/')) item.meta = 'Marketplace';
       lensGroups.facebook.push(item);
-    } else lensGroups.other.push(item);
+    } else if (/\.au$/.test(host)) lensGroups.other.push(item);
+    else lensGroups.overseas.push(item); // not shown, but helps work out the item's name
   }
 }
 
@@ -236,7 +244,7 @@ function buildGroups(active) {
     active: { title: 'eBay AU: for sale now', items: activeItems, error: active?.status === 'rejected' ? active.reason.message : '' },
     sold: { title: 'eBay AU: sold or ended', note: 'eBay AU pages showing this image that aren\'t current listings, so most have sold or ended. For full sold history use the "eBay AU sold" button above.', items: lensEbay, error: lg.error },
     facebook: { title: 'Facebook & Marketplace', note: 'Pages Google has found. Marketplace needs a login, so use the "Facebook Marketplace" button above for live listings.', items: fb, error: lg.error },
-    other: { title: 'Other sites', items: lg.other, collapsed: true, hideEmpty: true },
+    other: { title: 'Other Australian sites', items: lg.other, collapsed: true, hideEmpty: true },
   };
 }
 

@@ -5,7 +5,7 @@
 Endpoints used by app.js:
     GET  /api/status
     POST /api/lens         {image: <base64 jpeg>}  Google Lens via SerpApi (country=au)
-    GET  /api/ebay?q=      eBay AU current listings via SerpApi's eBay engine
+    GET  /api/ebay?q=      eBay AU current listings located in Australia, via SerpApi's eBay engine
     GET  /api/img?url=     image proxy so the page can compare thumbnails
 """
 import base64
@@ -93,14 +93,15 @@ def ebay():
     q = request.args.get("q", "").strip()
     if not q:
         return jsonify(items=[])
-    data = serpapi({"engine": "ebay", "ebay_domain": "ebay.com.au", "_nkw": q, "_ipg": 50})
+    # LH_PrefLoc=1: only items located in Australia, not overseas sellers on ebay.com.au
+    data = serpapi({"engine": "ebay", "ebay_domain": "ebay.com.au", "_nkw": q, "_ipg": 50, "LH_PrefLoc": "1"})
     items = []
     for r in data.get("organic_results", []):
         p = r.get("price") or {}
         price = p.get("raw") or (p.get("from", {}).get("raw", "") + (" to " + p["to"]["raw"] if p.get("to") else ""))
         items.append({
             "title": r.get("title"), "url": r.get("link"), "thumb": r.get("thumbnail"),
-            "price": price, "meta": " · ".join(x for x in [r.get("condition"), r.get("location")] if x),
+            "price": price, "meta": " · ".join(x for x in [r.get("condition"), r.get("location")] if x and "$" not in x),
         })
     return jsonify(items=items)
 

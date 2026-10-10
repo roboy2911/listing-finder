@@ -1,6 +1,8 @@
 # Listing Finder
 
-Drop in a photo of an item and find **the same item** on eBay Australia and Facebook.
+Drop in a photo of an item and find **the same item** on eBay Australia and Facebook. Everything is
+limited to Australia: Google Lens runs as Australia, eBay results are only items located in Australia,
+and other sites are only Australian (.au) ones.
 
 How it works:
 
@@ -12,10 +14,11 @@ How it works:
    closest first. Google's own **exact match** results are marked too.
 
 Results are grouped into **eBay AU: for sale now**, **eBay AU: sold or ended** (eBay pages showing
-your image that aren't live any more), **Facebook & Marketplace**, and **Other sites**.
+your image that aren't live any more), **Facebook & Marketplace**, and **Other Australian sites**.
 
 One-click buttons open **eBay AU sold**, **eBay AU for sale** and **Facebook Marketplace** searches for
-the item name in your own browser. Edit the name if it's off.
+the item name in your own browser (eBay set to items in Australia, Marketplace set to the city you pick).
+Edit the name if it's off.
 
 ## Setup (once)
 
@@ -38,7 +41,8 @@ Choose an image, drag one in, or paste one with Ctrl+V.
   automated browsers. So the app only shows sold/ended eBay pages that Google Lens finds. The
   **eBay AU sold** button opens the full sold search in your browser.
 - **Facebook Marketplace:** it needs a login and has no public API, so only posts Google has indexed
-  appear. The **Facebook Marketplace** button opens a live search in your browser.
+  appear, and Facebook doesn't show where a post is from, so these can include overseas posts. The
+  **Facebook Marketplace** button opens a live search in your chosen Australian city.
 - The photo match score is a quick visual fingerprint. It's very good at "same photo, resized"
   but weaker for different photos of the same item.
 - Privacy: your photo is uploaded to SerpApi, which deletes it after 10 minutes.
