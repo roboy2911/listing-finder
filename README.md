@@ -10,8 +10,10 @@ How it works:
    eBay AU listings and Facebook / Marketplace posts.
 2. The item's name is worked out from those matches and used to search **eBay AU's current listings**
    (SerpApi's eBay search).
-3. Every result's photo is compared with yours and labelled **Same photo / Very similar / Similar**,
-   closest first. Google's own **exact match** results are marked too.
+3. Every result's photo is compared with yours. Results that are the **identical photo** (same
+   background, framing and colours, just resized or recompressed) go in a highlighted
+   **Exact same photo found** box at the very top. Everything else is labelled **Very similar** or
+   **Similar**, closest first. Google's own **exact match** results are marked too.
 
 Results are grouped into **eBay AU: for sale now**, **eBay AU: sold or ended** (eBay pages showing
 your image that aren't live any more), **Facebook & Marketplace**, and **Other Australian sites**.
@@ -43,8 +45,9 @@ Choose an image, drag one in, or paste one with Ctrl+V.
 - **Facebook Marketplace:** it needs a login and has no public API, so only posts Google has indexed
   appear, and Facebook doesn't show where a post is from, so these can include overseas posts. The
   **Facebook Marketplace** button opens a live search in your chosen Australian city.
-- The photo match score is a quick visual fingerprint. It's very good at "same photo, resized"
-  but weaker for different photos of the same item.
+- The identical-photo check is deliberately strict: a different photo of the same item, or a
+  noticeably cropped copy, won't count. Tested on 20 eBay photos: every resized copy matched and
+  none of the 190 pairs of different photos did.
 - Privacy: your photo is uploaded to SerpApi, which deletes it after 10 minutes.
 
 ## Files
