@@ -1,3 +1,4 @@
 config.json
 browser-profile/
 __pycache__/
+.venv/

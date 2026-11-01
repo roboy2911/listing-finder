@@ -32,7 +32,8 @@ Geelong, Townsville, Cairns, Toowoomba, Ballarat, Bendigo and Launceston. The pa
 2. **Get a SerpApi key** (free, no credit card): sign up at <https://serpapi.com/> and copy your API key.
    The free plan includes 250 searches/month. Each photo uses 3 (about 80 photos/month), and
    re-searching eBay by name uses 1.
-3. Double-click **`install.bat`**. It installs the two Python packages and creates `config.json`.
+3. Double-click **`install.bat`**. It sets up a private Python environment in `.venv` (so it works whichever
+   copy of Python Windows finds first), installs the two packages and creates `config.json`.
 4. Open `config.json` and paste in your key: `"serpApiKey": "abc123..."`.
    `config.json` is git-ignored, so your key is never committed.
 
