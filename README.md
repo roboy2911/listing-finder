@@ -18,6 +18,10 @@ Google's own "exact match" label isn't used: in testing it flagged hundreds of p
 card, not the same photo. eBay listings Google finds on other eBay sites (e.g. ebay.com) link to the same
 listing on ebay.com.au, and photos found on non-Australian sites are only shown when they're the exact photo.
 
+**eBay image search** copies your photo and opens eBay Australia: click the camera icon in eBay's search bar
+and paste it (Ctrl+V) or upload it. eBay's image search can't be started by a link or run by the app (it needs
+eBay developer keys), so its results open in your browser and aren't checked for the exact photo.
+
 One-click buttons open **eBay AU sold**, **eBay AU for sale** and **Facebook Marketplace** searches for the
 item name in your own browser (eBay set to items in Australia, Marketplace set to the city you pick).
 Edit the name if it's off.

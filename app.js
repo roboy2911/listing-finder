@@ -12,6 +12,7 @@ let mineCrops = null;     // fingerprints of the photo and centred crops of it
 let lensGroups = null;    // Lens results for the current photo, reused by "Search again"
 let setup = { serpapi: false };
 let lastGroups = null;    // results currently shown, re-rendered when the postcode changes
+let currentImg = null;    // the photo being searched, for the "eBay image search" button
 
 // ---------- input ----------
 fileInput.addEventListener('change', () => fileInput.files[0] && runImage(fileInput.files[0]));
@@ -29,6 +30,26 @@ document.addEventListener('paste', (e) => {
   if (item) runImage(item.getAsFile());
 });
 queryEl.addEventListener('input', updateLinks);
+
+// "eBay image search": eBay's image search can't be started from a link, so copy the photo
+// to the clipboard and open eBay; the user clicks the camera icon and pastes it. The link
+// itself opens eBay; the clipboard write runs alongside it within the same click.
+$('lnkEbayImage').addEventListener('click', (e) => {
+  if (!currentImg) {
+    e.preventDefault();
+    statusEl.textContent = 'Add a photo first, then press "eBay image search".';
+    return;
+  }
+  const png = currentImg.then((img) => {
+    const c = document.createElement('canvas');
+    c.width = img.naturalWidth; c.height = img.naturalHeight;
+    c.getContext('2d').drawImage(img, 0, 0);
+    return new Promise((resolve) => c.toBlob(resolve, 'image/png'));
+  });
+  navigator.clipboard.write([new ClipboardItem({ 'image/png': png })])
+    .then(() => { statusEl.textContent = 'Photo copied. On eBay, click the camera icon in the search bar and press Ctrl+V (or upload the photo).'; })
+    .catch(() => { statusEl.textContent = 'Couldn\'t copy the photo. On eBay, click the camera icon in the search bar and upload the photo file.'; });
+});
 
 // Marketplace city, remembered between visits
 const cityEl = $('city');
@@ -257,6 +278,7 @@ async function runImage(file) {
   const id = ++runId;
   resultsEl.innerHTML = '';
   const src = URL.createObjectURL(file);
+  currentImg = loadImage(src);
   preview.src = src; preview.hidden = false;
   $('dropText').innerHTML = '<strong>Searching this photo.</strong> Drop or paste another to start over.';
 
